@@ -35,7 +35,7 @@ func main() {
 
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		fmt.Println("Error on socket server listening:", err)
+		slog.Error("Error on socket server listening", "error", err)
 		return
 	}
 	defer conn.Close()
@@ -46,17 +46,17 @@ outer:
 	for {
 		n, remoteAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			fmt.Printf("error reading from socket %s\n", err)
+			slog.Error("error reading from socket", "error", err)
 			break
 		}
 
 		var pcRcv, errr = localnet.Decode(buffer[:n])
 		if errr != nil {
-			fmt.Printf("Error decoding packet. Closing server\n")
+			slog.Error("Error decoding packet. Closing server")
 			break
 		}
 
-		fmt.Printf("DEBUG %s\n", pcRcv)
+		slog.Debug("Reading data from socket", "packet", pcRcv)
 
 		var pcSnd localnet.IPacketCmd = nil
 
@@ -122,15 +122,15 @@ outer:
 		case localnet.CmdTransmit:
 			var bb, err = options.Channel.Transmit(pcRcv.(localnet.IPacketBody).GetBody())
 			if err != nil {
-				fmt.Printf("Error on transmit: %s\n", err)
+				slog.Error("Error on transmit", "error", err)
 				pcSnd = localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 			} else {
 				pcSnd = localnet.NewPacketBody(localnet.CmdResponse, bb)
 			}
-			fmt.Printf("DEBUG %s\n", pcSnd)
+			slog.Debug("Sending to socket", "packet", pcSnd)
 
 		default:
-			fmt.Printf("Receiving unknown command. Closing server\n")
+			slog.Error("Receiving unknown command. Closing server")
 			break outer
 		}
 
@@ -139,13 +139,13 @@ outer:
 		}
 		byteArrayResponse, err := localnet.Encode(pcSnd)
 		if err != nil {
-			fmt.Printf("Error encoding response: %s\n", err)
+			slog.Error("Error encoding response", "error", err)
 			break
 		}
 
 		_, err = conn.WriteToUDP(byteArrayResponse, remoteAddr)
 		if err != nil {
-			fmt.Printf("Error sending response to the client: %s\n", err)
+			slog.Error("Error sending response to the client", "error", err)
 			break
 		}
 
