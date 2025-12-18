@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"sync"
 
 	"log/slog"
 
@@ -15,7 +16,8 @@ import (
 )
 
 var (
-	options lpa.Options
+	channelMu sync.RWMutex
+	options   lpa.Options
 )
 
 func main() {
@@ -40,10 +42,10 @@ func main() {
 	}
 	defer conn.Close()
 
-	buffer := make([]byte, *bufferSizeFlag)
-
 outer:
 	for {
+		buffer := make([]byte, *bufferSizeFlag)
+
 		n, remoteAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			slog.Error("error reading from socket", "error", err)
@@ -56,7 +58,7 @@ outer:
 			break
 		}
 
-		slog.Debug("Reading data from socket", "packet", pcRcv)
+		slog.Debug("Read f sock", "packet", pcRcv)
 
 		var pcSnd localnet.IPacketCmd = nil
 
@@ -64,6 +66,7 @@ outer:
 
 		case localnet.CmdConnect:
 
+			channelMu.Lock()
 			if options.Channel != nil {
 				err = fmt.Errorf("error: channel already open, retry later")
 			} else {
@@ -84,6 +87,7 @@ outer:
 					err = fmt.Errorf("error: no handler for the specified protocol %s", pcConn.GetProto())
 				}
 			}
+			channelMu.Unlock()
 
 			if err != nil {
 				pcSnd = localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
@@ -127,7 +131,7 @@ outer:
 			} else {
 				pcSnd = localnet.NewPacketBody(localnet.CmdResponse, bb)
 			}
-			slog.Debug("Sending to socket", "packet", pcSnd)
+			slog.Debug("Send t sock", "packet", pcSnd)
 
 		default:
 			slog.Error("Receiving unknown command. Closing server")
