@@ -70,24 +70,31 @@ outer:
 			if options.Channel != nil {
 				err = fmt.Errorf("error: channel already open, retry later")
 			} else {
-				var pcConn localnet.IPacketConnect = pcRcv.(localnet.IPacketConnect)
+				var pcConn localnet.IPacketConnect
+				var ok bool
 
-				switch pcConn.GetProto() {
-				case "at":
-					options.Channel, err = at.New(pcConn.GetDevice())
-				/*case "ccid":
-				options.Channel, err = ccid.New() */
-				case "mbim":
-					options.Channel, err = mbim.New(pcConn.GetDevice(), pcConn.GetSlot())
-				case "qmi":
-					options.Channel, err = qmi.New(pcConn.GetDevice(), pcConn.GetSlot())
-				case "qrtr":
-					options.Channel, err = qmi.NewQRTR(pcConn.GetSlot())
-				default:
-					err = fmt.Errorf("error: no handler for the specified protocol %s", pcConn.GetProto())
+				pcConn, ok = pcRcv.(localnet.IPacketConnect)
+				if !ok {
+
+					err = fmt.Errorf("invalid packet type for connect command")
+				} else {
+
+					switch pcConn.GetProto() {
+					case "at":
+						options.Channel, err = at.New(pcConn.GetDevice())
+					/*case "ccid":
+					options.Channel, err = ccid.New() */
+					case "mbim":
+						options.Channel, err = mbim.New(pcConn.GetDevice(), pcConn.GetSlot())
+					case "qmi":
+						options.Channel, err = qmi.New(pcConn.GetDevice(), pcConn.GetSlot())
+					case "qrtr":
+						options.Channel, err = qmi.NewQRTR(pcConn.GetSlot())
+					default:
+						err = fmt.Errorf("error: no handler for the specified protocol %s", pcConn.GetProto())
+					}
 				}
 			}
-			channelMu.Unlock()
 
 			if err != nil {
 				pcSnd = localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
@@ -99,15 +106,21 @@ outer:
 					options.Channel = nil
 				}
 			}
+			channelMu.Unlock()
 
 		case localnet.CmdDisconnect:
+
+			channelMu.Lock()
 			err = options.Channel.Disconnect()
 			options.Channel = nil
 			if err != nil {
 				pcSnd = localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 			}
+			channelMu.Unlock()
 
 		case localnet.CmdOpenLogical:
+
+			channelMu.Lock()
 			var channel byte
 			channel, err = options.Channel.OpenLogicalChannel(pcRcv.(localnet.IPacketBody).GetBody())
 			var bb = []byte{channel}
@@ -116,14 +129,20 @@ outer:
 			} else {
 				pcSnd = localnet.NewPacketBody(localnet.CmdResponse, bb)
 			}
+			channelMu.Unlock()
 
 		case localnet.CmdCloseLogical:
+
+			channelMu.Lock()
 			err = options.Channel.CloseLogicalChannel(pcRcv.(localnet.IPacketBody).GetBody()[0])
 			if err != nil {
 				pcSnd = localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 			}
+			channelMu.Unlock()
 
 		case localnet.CmdTransmit:
+
+			channelMu.Lock()
 			var bb, err = options.Channel.Transmit(pcRcv.(localnet.IPacketBody).GetBody())
 			if err != nil {
 				slog.Error("Error on transmit", "error", err)
@@ -132,6 +151,7 @@ outer:
 				pcSnd = localnet.NewPacketBody(localnet.CmdResponse, bb)
 			}
 			slog.Debug("Send t sock", "packet", pcSnd)
+			channelMu.Unlock()
 
 		default:
 			slog.Error("Receiving unknown command. Closing server")
