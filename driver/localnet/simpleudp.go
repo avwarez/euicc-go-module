@@ -27,6 +27,14 @@ func NewUDP(serverAddr string, device string, proto string, slot uint8, bufferSi
 		return nil, fmt.Errorf("error resolving address: %s %w", serverAddr, err)
 	}
 
+	if bufferSize == 0 {
+		bufferSize = 2048 // default
+	}
+
+	if bufferSize < 512 {
+		return nil, fmt.Errorf("bufferSize too small: %d (minimum 512)", bufferSize)
+	}
+
 	netctx := &NetContext{serverAddr: serverAddr, rAddr: rAddr, device: device, proto: proto, slot: slot, bufferSize: bufferSize}
 	return netctx, nil
 }
@@ -83,9 +91,6 @@ func remoteCall(nc *NetContext, pcSnd IPacketCmd) (by []byte, er error) {
 		return nil, fmt.Errorf("error sending message %s %w", pcSnd, err2)
 	}
 
-	if nc.bufferSize <= 0 {
-		nc.bufferSize = 2048
-	}
 	buffer := make([]byte, nc.bufferSize)
 	n, _, err3 := nc.conn.ReadFromUDP(buffer)
 	if err3 != nil {

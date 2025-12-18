@@ -52,43 +52,36 @@ type PacketConnect struct {
 	Slot   uint8
 }
 
-func Decode(byteArray []byte) (p IPacketCmd, e error) {
+func init() {
 	gob.Register(&PacketCmd{})
 	gob.Register(&PacketBody{})
 	gob.Register(&PacketConnect{})
+}
 
-	// Decomprimi
+func Decode(byteArray []byte) (p IPacketCmd, e error) {
 	gr, err := gzip.NewReader(bytes.NewReader(byteArray))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode, reader error using gzip: %w", err)
 	}
 	defer gr.Close()
 
-	// Decodifica GOB
 	dec := gob.NewDecoder(gr)
 	e = dec.Decode(&p)
 	return p, e
 }
 
 func Encode(p IPacketCmd) (byteArray []byte, err error) {
-	gob.Register(&PacketCmd{})
-	gob.Register(&PacketBody{})
-	gob.Register(&PacketConnect{})
-
 	var buf bytes.Buffer
 
-	// Comprimi (livello default = 6, buon compromesso)
 	gw := gzip.NewWriter(&buf)
 
-	// Codifica GOB
 	enc := gob.NewEncoder(gw)
 	if err = enc.Encode(&p); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode, writer error using gzip: %w", err)
 	}
 
-	// Importante: chiudi il writer per flushare i dati compressi
 	if err = gw.Close(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode, error closing gzip writer: %w", err)
 	}
 
 	return buf.Bytes(), nil
