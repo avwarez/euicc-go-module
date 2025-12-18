@@ -8,6 +8,8 @@ import (
 	"github.com/damonto/euicc-go/apdu"
 )
 
+const InvalidChannel byte = 0xFF
+
 type NetContext struct {
 	serverAddr string
 	rAddr      *net.UDPAddr
@@ -67,9 +69,9 @@ func (c *NetContext) Transmit(command []byte) ([]byte, error) {
 func (c *NetContext) OpenLogicalChannel(AID []byte) (byte, error) {
 	bb, er := remoteCall(c, NewPacketBody(CmdOpenLogical, AID))
 	if er != nil {
-		return 255, er
+		return InvalidChannel, er
 	} else if bb == nil || len(bb) != 1 {
-		return 255, errors.New("openlogicalchannel: empty channel received")
+		return InvalidChannel, errors.New("openlogicalchannel: empty channel received")
 	}
 	return bb[0], er
 }
