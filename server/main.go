@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"log/slog"
 
@@ -16,8 +17,10 @@ import (
 )
 
 var (
-	channelMu sync.RWMutex
-	options   lpa.Options
+	channelMu    sync.RWMutex
+	options      lpa.Options
+	channel      byte
+	lastActivity time.Time
 )
 
 func main() {
@@ -54,11 +57,21 @@ outer:
 
 		var pcRcv, errr = localnet.Decode(buffer[:n])
 		if errr != nil {
-			slog.Error("Error decoding packet. Closing server")
-			break
+			slog.Error("Error decoding packet. Skipping")
+			continue
 		}
 
 		slog.Debug("Read f sock", "packet", pcRcv)
+
+		channelMu.Lock()
+		if time.Since(lastActivity) > 35*time.Second && options.Channel != nil {
+			slog.Info("open channel maximum time exceeded, forcing disconnection")
+			options.Channel.CloseLogicalChannel(channel)
+			options.Channel.Disconnect()
+			options.Channel = nil
+		}
+		lastActivity = time.Now()
+		channelMu.Unlock()
 
 		var pcSnd localnet.IPacketCmd = nil
 
@@ -121,7 +134,7 @@ outer:
 		case localnet.CmdOpenLogical:
 
 			channelMu.Lock()
-			var channel byte
+			//var channel byte
 			channel, err = options.Channel.OpenLogicalChannel(pcRcv.(localnet.IPacketBody).GetBody())
 			var bb = []byte{channel}
 			if err != nil {
