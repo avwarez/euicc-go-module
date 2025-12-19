@@ -74,6 +74,7 @@ func main() {
 	go sessionCleanup(ctx)
 
 	slog.Info("server started", "address", addr.String(), "timeout", sessionTimeout)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
 	for {
 		select {
@@ -88,6 +89,11 @@ func main() {
 
 		n, remoteAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				continue
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -218,12 +224,10 @@ func handleDisconnect(remoteAddr *net.UDPAddr) localnet.IPacketCmd {
 	channelMu.Lock()
 	defer channelMu.Unlock()
 
-	// Verifica che ci sia una sessione attiva
 	if activeSession == nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "no active session")
 	}
 
-	// Verifica che sia lo stesso client
 	if !addressesEqual(activeSession.RemoteAddr, remoteAddr) {
 		return localnet.NewPacketCmdErr(
 			localnet.CmdResponse,
@@ -231,14 +235,12 @@ func handleDisconnect(remoteAddr *net.UDPAddr) localnet.IPacketCmd {
 		)
 	}
 
-	// Chiudi canale logico se aperto
 	if options.Channel != nil && activeSession.LogicalChannel != localnet.InvalidChannel {
 		if err := options.Channel.CloseLogicalChannel(activeSession.LogicalChannel); err != nil {
 			slog.Warn("failed to close logical channel", "error", err)
 		}
 	}
 
-	// Disconnetti
 	var err error
 	if options.Channel != nil {
 		err = options.Channel.Disconnect()
@@ -259,12 +261,10 @@ func handleOpenLogical(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) local
 	channelMu.Lock()
 	defer channelMu.Unlock()
 
-	// Verifica sessione e autorizzazione
 	if err := checkSessionAuth(remoteAddr); err != nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 	}
 
-	// Type assertion sicura
 	pktBody, ok := pcRcv.(localnet.IPacketBody)
 	if !ok {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "invalid packet type")
@@ -275,13 +275,11 @@ func handleOpenLogical(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) local
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "empty AID")
 	}
 
-	// Apri canale logico
 	channel, err := options.Channel.OpenLogicalChannel(aid)
 	if err != nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 	}
 
-	// Salva il canale nella sessione
 	activeSession.LogicalChannel = channel
 	activeSession.LastActivity = time.Now()
 
@@ -294,12 +292,10 @@ func handleCloseLogical(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) loca
 	channelMu.Lock()
 	defer channelMu.Unlock()
 
-	// Verifica sessione e autorizzazione
 	if err := checkSessionAuth(remoteAddr); err != nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 	}
 
-	// Type assertion sicura
 	pktBody, ok := pcRcv.(localnet.IPacketBody)
 	if !ok || len(pktBody.GetBody()) == 0 {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "invalid packet")
@@ -307,13 +303,11 @@ func handleCloseLogical(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) loca
 
 	channel := pktBody.GetBody()[0]
 
-	// Chiudi canale
 	err := options.Channel.CloseLogicalChannel(channel)
 	if err != nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 	}
 
-	// Reset canale nella sessione
 	if activeSession.LogicalChannel == channel {
 		activeSession.LogicalChannel = localnet.InvalidChannel
 	}
@@ -328,12 +322,10 @@ func handleTransmit(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) localnet
 	channelMu.Lock()
 	defer channelMu.Unlock()
 
-	// Verifica sessione e autorizzazione
 	if err := checkSessionAuth(remoteAddr); err != nil {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, err.Error())
 	}
 
-	// Type assertion sicura
 	pktBody, ok := pcRcv.(localnet.IPacketBody)
 	if !ok {
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "invalid packet type")
@@ -344,7 +336,6 @@ func handleTransmit(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) localnet
 		return localnet.NewPacketCmdErr(localnet.CmdResponse, "empty APDU")
 	}
 
-	// Trasmetti APDU
 	response, err := options.Channel.Transmit(apdu)
 	if err != nil {
 		slog.Error("transmit failed", "error", err)
@@ -360,7 +351,6 @@ func handleTransmit(pcRcv localnet.IPacketCmd, remoteAddr *net.UDPAddr) localnet
 	return localnet.NewPacketBody(localnet.CmdResponse, response)
 }
 
-// checkSessionAuth verifica che ci sia una sessione attiva e che il client sia autorizzato
 func checkSessionAuth(remoteAddr *net.UDPAddr) error {
 	if activeSession == nil {
 		return fmt.Errorf("no active session, connect first")
@@ -370,7 +360,6 @@ func checkSessionAuth(remoteAddr *net.UDPAddr) error {
 		return fmt.Errorf("unauthorized: session belongs to %s", activeSession.RemoteAddr)
 	}
 
-	// Aggiorna timeout check
 	if time.Since(activeSession.LastActivity) > sessionTimeout {
 		slog.Warn("session expired during operation")
 		forceCleanup()
@@ -380,7 +369,6 @@ func checkSessionAuth(remoteAddr *net.UDPAddr) error {
 	return nil
 }
 
-// sessionCleanup pulisce periodicamente le sessioni scadute
 func sessionCleanup(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -402,28 +390,24 @@ func sessionCleanup(ctx context.Context) {
 	}
 }
 
-// forceCleanup forza la pulizia della sessione attiva (chiamare con lock acquisito)
 func forceCleanup() {
 	if activeSession != nil && options.Channel != nil {
-		// Chiudi canale logico se aperto
+
 		if activeSession.LogicalChannel != localnet.InvalidChannel {
 			options.Channel.CloseLogicalChannel(activeSession.LogicalChannel)
 		}
-		// Disconnetti
 		options.Channel.Disconnect()
 		options.Channel = nil
 	}
 	activeSession = nil
 }
 
-// cleanupActiveSession pulisce la sessione attiva (thread-safe)
 func cleanupActiveSession() {
 	channelMu.Lock()
 	defer channelMu.Unlock()
 	forceCleanup()
 }
 
-// addressesEqual confronta due indirizzi UDP
 func addressesEqual(a1, a2 *net.UDPAddr) bool {
 	if a1 == nil || a2 == nil {
 		return false
@@ -431,7 +415,6 @@ func addressesEqual(a1, a2 *net.UDPAddr) bool {
 	return a1.IP.Equal(a2.IP) && a1.Port == a2.Port
 }
 
-// sendError helper per inviare errori
 func sendError(conn *net.UDPConn, addr *net.UDPAddr, errMsg string) {
 	pcErr := localnet.NewPacketCmdErr(localnet.CmdResponse, errMsg)
 	if data, err := localnet.Encode(pcErr); err == nil {
