@@ -33,10 +33,10 @@ go mod download
 ### Running the Server
 ```bash
 # Basic usage with defaults (0.0.0.0:8080)
-go run main.go
+go run server/main.go
 
 # Custom configuration
-go run main.go -bindAddr 127.0.0.1 -bindPort 9000 -bufferSize 4096
+go run server/main.go -bindAddr 127.0.0.1 -bindPort 9000 -bufferSize 4096
 ```
 
 ### Command Line Options
@@ -91,7 +91,8 @@ All packets are compressed using GZIP and encoded with GOB. The protocol support
 ### Project Structure
 ```
 euicc-go-module/
-├── main.go                    # Server entry point
+├── server/
+│   └── main.go                # Server entry point
 ├── driver/
 │   └── localnet/
 │       ├── packetcmd.go      # Packet definitions and encoding
@@ -102,13 +103,13 @@ euicc-go-module/
 ### Building
 ```bash
 # Build for current platform
-go build -o euicc-server main.go
+go build -o euicc-server server/main.go
 
 # Build for Linux ARM64 (e.g., Raspberry Pi)
-GOOS=linux GOARCH=arm64 go build -o euicc-server-arm64 main.go
+GOOS=linux GOARCH=arm64 go build -o euicc-server-arm64 server/main.go
 
 # Build for Linux x86_64
-GOOS=linux GOARCH=amd64 go build -o euicc-server-amd64 main.go
+GOOS=linux GOARCH=amd64 go build -o euicc-server-amd64 server/main.go
 ```
 
 ## 🔒 Security Considerations
